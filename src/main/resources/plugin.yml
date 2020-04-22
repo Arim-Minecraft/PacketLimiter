@@ -1,6 +1,5 @@
-main: ca.spottedleaf.packetlimiter.PacketLimiter
-version: "1.0.1"
-name: PacketLimiter
-author: Spottedleaf
+main: ${project.groupId}.PacketLimiter
+version: ${project.version}
+name: ${project.name}
+authors: [Spottedleaf, A248]
 depend: [ProtocolLib]
-api-version: "1.13"

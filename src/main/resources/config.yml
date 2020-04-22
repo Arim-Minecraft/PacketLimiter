@@ -17,4 +17,4 @@ max-packet-rate: 500.0
 kick-command: "kick %PLAYER% &cYou sent too many packets! &7(%PACKETS%)"
 
 # Configuration version, do not touch.
-config-version: 0
+config-version: '${project.version}'
