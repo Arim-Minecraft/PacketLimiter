@@ -14,39 +14,31 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Level;
 
 public final class PacketListener extends PacketAdapter implements Listener {
 
-    private static final DecimalFormat ONE_DECIMAL_PLACE = new DecimalFormat("0.0");
-    private final ConcurrentHashMap<UUID, PlayerInfo> playerPacketInfo = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, PacketBucket> buckets = new ConcurrentHashMap<>();
 
-    private final String kickMessage;
+    private final String kickCommand;
     private final double maxPacketRate;
     private final double interval;
 
-    public PacketListener(final PacketLimiter plugin, final String kickMessage, final double maxPacketRate, final double interval) {
+    public PacketListener(final PacketLimiter plugin, final String kickCommand, final double maxPacketRate, final double interval) {
         super(plugin, ListenerPriority.LOWEST, getPackets(), ListenerOptions.ASYNC, ListenerOptions.INTERCEPT_INPUT_BUFFER);
         // we want to listen at the earliest stage so we can reduce the overhead of packets going through other plugins,
         // as well as other plugin logic being executed for cancelled packets
 
-        this.kickMessage = kickMessage;
+        this.kickCommand = kickCommand;
         this.maxPacketRate = maxPacketRate;
         this.interval = interval;
-
-        // ... support reload
-        for (final Player player : Bukkit.getOnlinePlayers()) {
-            this.playerPacketInfo.put(player.getUniqueId(), new PlayerInfo(new PacketBucket(this.interval, 150), player.getUniqueId()));
-        }
     }
 
     private static List<PacketType> getPackets() {
-        final List<PacketType> packets = new ArrayList<>();
+        List<PacketType> packets = new ArrayList<>();
 
         for (final PacketType type : PacketType.values()) {
             if (type.isClient() && type.getProtocol() == PacketType.Protocol.PLAY && type.isSupported()) {
@@ -65,73 +57,59 @@ public final class PacketListener extends PacketAdapter implements Listener {
 
         final Player player = event.getPlayer();
 
-        if (player instanceof TemporaryPlayer || player == null) {
+        if (player == null || player instanceof TemporaryPlayer) {
             return; // we don't have UUID at this stage
         }
 
-        final UUID targetUniqueId = player.getUniqueId();
-        PlayerInfo info = this.playerPacketInfo.get(targetUniqueId);
+        final UUID uuid = player.getUniqueId();
 
-        if (info == null) {
-            return;
+        final PacketBucket bucket = this.buckets.get(uuid);
+        if (bucket == null) {
+        	return;
         }
 
-        final PacketBucket bucket = info.packets;
-
+        boolean violation = false;
+        final int packets;
+        
         synchronized (bucket) {
-            final PlayerInfo currInfo = this.playerPacketInfo.get(targetUniqueId);
+            final PacketBucket currBucket = this.buckets.get(uuid);
 
-            if (currInfo != info) {
+            if (currBucket != bucket) { // O_O
                 return;
             }
 
-            if (info.violatedLimit) {
+            if (bucket.violatedLimit) {
                 event.setCancelled(true);
                 return;
             }
 
-            final int packets = bucket.incrementPackets(1);
+            packets = bucket.incrementPackets(1);
 
-            if (bucket.getCurrentPacketRate() > this.maxPacketRate) {
-                info.violatedLimit = true;
-                event.setCancelled(true);
+            violation = bucket.violatedLimit = bucket.getCurrentPacketRate() > this.maxPacketRate;
+        }
+        if (violation) {
+        	event.setCancelled(true);
+            Bukkit.getScheduler().runTask(this.plugin, () -> {
+                final Player target = Bukkit.getPlayer(uuid);
+                if (target == null) {
+                    return;
+                }
 
-                Bukkit.getScheduler().runTask(this.plugin, () -> {
-                    final Player target = Bukkit.getPlayer(targetUniqueId);
-                    if (target == null) {
-                        return;
-                    }
-
-                    target.kickPlayer(this.kickMessage);
-                    this.plugin.getLogger().log(Level.WARNING, "Player {0} ({1}) was kicked for sending too many packets! {2} in the last {3} seconds",
-                            new Object[] {target.getName(), target.getUniqueId(), packets, ONE_DECIMAL_PLACE.format(bucket.intervalTime / 1000.0)});
-                });
-            }
+				target.kickPlayer(this.kickCommand.replace("%PLAYER%", target.getName()).replace("%PACKETS%",
+						Integer.toString(packets)));
+            });
         }
     }
 
-
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerJoin(final PlayerJoinEvent event) {
-        final UUID player = event.getPlayer().getUniqueId();
+        final UUID uuid = event.getPlayer().getUniqueId();
 
-        this.playerPacketInfo.put(player, new PlayerInfo(new PacketBucket(this.interval, 150), player));
+        this.buckets.put(uuid, new PacketBucket(uuid, this.interval, 150));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerQuit(final PlayerQuitEvent event) {
-        this.playerPacketInfo.remove(event.getPlayer().getUniqueId());
-    }
-
-    public static final class PlayerInfo {
-
-        public final PacketBucket packets;
-        public final UUID player;
-        public boolean violatedLimit;
-
-        public PlayerInfo(final PacketBucket packets, final UUID player) {
-            this.packets = packets;
-            this.player = player;
-        }
+        this.buckets.remove(event.getPlayer().getUniqueId());
     }
 }

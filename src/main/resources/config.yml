@@ -11,8 +11,10 @@ interval: 7.0
 # It is measured over the configured interval
 max-packet-rate: 500.0
 
-# Message to display to clients who get kicked
-kick-message: "&cSent too many packets"
+# Command to run to kick players
+# %PLAYER% = player name
+# %PACKETS% = packet count
+kick-command: "kick %PLAYER% &cYou sent too many packets! &7(%PACKETS%)"
 
 # Configuration version, do not touch.
 config-version: 0

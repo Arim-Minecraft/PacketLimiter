@@ -1,6 +1,7 @@
 package ca.spottedleaf.packetlimiter;
 
 import java.util.Arrays;
+import java.util.UUID;
 
 public class PacketBucket {
 
@@ -11,19 +12,30 @@ public class PacketBucket {
     private static final int MILLISECONDS_TO_SECONDS = 1000;
 
     /**
+     * The player uuid
+     * 
+     */
+    final UUID player;
+    /**
+     * Whether the limit has been violated
+     * 
+     */
+    volatile boolean violatedLimit = false;
+
+    /**
      * The time frame this packet limiter will count packets over (ms).
      */
-    public final double intervalTime;
+    final double intervalTime;
 
     /**
      * The time each bucket will represent (ms).
      */
-    public final double intervalResolution;
+    final double intervalResolution;
 
     /**
      * Total buckets contained in this limiter.
      */
-    public final int totalBuckets;
+    final int totalBuckets;
 
     /** contains all packet data, note that indices of buckets will wrap around the array */
     private final int[] data;
@@ -40,12 +52,15 @@ public class PacketBucket {
     /**
      * Constructs a packetlimiter which will record total packets sent over the specified
      * interval time (in ms) with the specified number of buckets
+     * 
+     * @param player the player uuid
      * @param intervalTime The specified interval time, in ms
      * @param totalBuckets The total number of buckets
      */
-    public PacketBucket(final double intervalTime, final int totalBuckets) {
+    PacketBucket(UUID player, final double intervalTime, final int totalBuckets) {
+    	this.player = player;
         this.intervalTime = intervalTime;
-        this.intervalResolution = intervalTime/(double)totalBuckets;
+        this.intervalResolution = intervalTime/totalBuckets;
         this.totalBuckets = totalBuckets;
         this.data = new int[totalBuckets];
     }
@@ -75,7 +90,7 @@ public class PacketBucket {
      * @param packets The number of packets to attach to the current time
      * @return The new packet count
      */
-    public int incrementPackets(final int packets) {
+    int incrementPackets(final int packets) {
         return this.incrementPackets(System.nanoTime(), packets);
     }
 
@@ -132,14 +147,14 @@ public class PacketBucket {
     /**
      * Returns the total number of packets recorded in this interval.
      */
-    public int getTotalPackets() {
+    int getTotalPackets() {
         return this.sum;
     }
 
     /**
      * Returns the current packet rate (since last update call), in packets per second
      */
-    public double getCurrentPacketRate() {
-        return this.sum / (this.intervalTime / (double)MILLISECONDS_TO_SECONDS);
+    double getCurrentPacketRate() {
+        return this.sum / (this.intervalTime / MILLISECONDS_TO_SECONDS);
     }
 }
